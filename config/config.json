@@ -1,9 +1,9 @@
 {
-    "token": "your-telegram-bot-token",
+    "token": "xxxx",
     "mysql": {
         "host": "localhost",
         "user": "root",
-        "password": "A936522#a",
-        "database": "food_reminder"
+        "password": "---",
+        "database": "---"
     }
 }

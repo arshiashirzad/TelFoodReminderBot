@@ -6,4 +6,4 @@ This Telegram bot reminds users to reserve their meals and sends periodic notifi
 
 1. Clone the repository:
    ```bash
-   git clone <repo-url>
+   git clone https://github.com/arshiashirzad/TelFoodReminderBot.git

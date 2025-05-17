@@ -43,7 +43,6 @@ load_dotenv()
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 
 MYSQL_CONFIG = {
-    MYSQL_CONFIG = {
     "host": os.getenv("MYSQLHOST", "mysql.railway.internal"),
     "port": int(os.getenv("MYSQLPORT", "3306")),
     "user": os.getenv("MYSQLUSER"),
@@ -52,7 +51,6 @@ MYSQL_CONFIG = {
     "pool_size": 5,
     "pool_name": "mypool",
     "connect_timeout": 30
-}
 }
 
 SQLALCHEMY_URL = (

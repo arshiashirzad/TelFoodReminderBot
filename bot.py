@@ -37,11 +37,11 @@ from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
 from apscheduler.events import EVENT_JOB_ERROR, EVENT_JOB_EXECUTED
 
 # ─── CONFIG ──────────────────────────────────────────────────────
-BOT_TOKEN = "7773709161:AAHOpkhV-qpWwcWC3x5Q9xlAQ3n0LC4aKWs"
+BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 MYSQL_CONFIG = {
-    "host": "localhost",
-    "user": "root",
-    "password": "amir.ir10",
+    "host": os.getenv("DB_HOST"),
+    "user": os.getenv("DB_USER"),
+    "password": os.getenv("DB_PASSWORD"),
     "database": "foodreminder",
     "pool_name": "food_reminder_pool",
     "pool_size": 5,

@@ -18,7 +18,6 @@ from telegram.ext import PicklePersistence
 
 import mysql.connector
 from mysql.connector import pooling
-
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import sessionmaker
@@ -37,7 +36,10 @@ from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
 from apscheduler.events import EVENT_JOB_ERROR, EVENT_JOB_EXECUTED
 
 from dotenv import load_dotenv
+
 load_dotenv()
+
+
 
 # ─── CONFIG ──────────────────────────────────────────────────────
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -224,69 +226,194 @@ def clean_food_name(food):
     return re.sub(r"(،|\(|\[)?\s*(رایگان|\d{2,3}(,\d{3})?)\s*(تومان|ریال)?\)?$", "", food).strip()
 
 def get_today_name():
-    weekdays = ["دوشنبه", "سه‌شنبه", "چهارشنبه", "پنج‌شنبه", "جمعه", "شنبه", "یک‌شنبه"]
-    return weekdays[datetime.today().weekday()]
+    """دریافت نام روز هفته امروز به فارسی"""
+    today = datetime.now()
+    weekday = today.weekday()  # 0 is Monday, 6 is Sunday
+
+    days_mapping = {
+        0: "دوشنبه",
+        1: "سه‌شنبه",
+        2: "چهارشنبه",
+        3: "پنجشنبه",
+        4: "جمعه",
+        5: "شنبه",
+        6: "یکشنبه"
+    }
+
+    return days_mapping[weekday]
 
 
-def parse_food_schedule(html_content):
-    """پردازش HTML و استخراج منوی غذا"""
-    soup = BeautifulSoup(html_content, "html.parser")
-    labels = soup.find_all("label", class_="reserveFoodCheckBox")
+def parse_food_schedule(html, university=None):
+    try:
+        soup = BeautifulSoup(html, "html.parser")
+        schedule = {}
 
-    # اگر هیچ لیبلی پیدا نشد، روش دیگری را امتحان کنیم
-    if not labels:
-        # جستجو برای عناصر دیگر که ممکن است حاوی اطلاعات غذا باشند
-        labels = soup.find_all("div", class_="food-item") or soup.find_all("span", class_="food-name")
+        day_containers = soup.find_all("div", class_="dayContainer")
 
-    # اگر هنوز هیچ عنصری پیدا نشد، خطا را گزارش کنیم
-    if not labels:
-        logging.error("هیچ عنصر غذایی در HTML یافت نشد")
-        return {"خطا": "اطلاعات غذا قابل استخراج نیست"}
+        for day_container in day_containers:
+            day_span = day_container.find(class_="day")
+            date_span = day_container.find(class_="date")
 
-    foods = [clean_food_name(label.get_text(strip=True)) for label in labels]
+            if day_span:
+                day_name = day_span.get_text(strip=True)
+                date = date_span.get_text(strip=True) if date_span else ""
 
-    # برای اطمینان از اینکه کافی غذا وجود دارد
-    if len(foods) < 30:  # تعداد حداقل مورد انتظار
-        logging.warning(f"تعداد غذاهای یافت شده کمتر از حد انتظار است: {len(foods)}")
+                schedule[day_name] = {
+                    "تاریخ": date,
+                    "صبحانه": [],
+                    "ناهار": [],
+                    "شام": []
+                }
 
-    days = ["شنبه", "یک‌شنبه", "دوشنبه", "سه‌شنبه", "چهارشنبه", "پنج‌شنبه"]
-    schedule = {}
+                current_element = day_container
 
-    # روش انعطاف‌پذیرتر برای تقسیم غذاها بین روزها
-    items_per_day = len(foods) // len(days)
-    remainder = len(foods) % len(days)
+                while True:
+                    current_element = current_element.find_next_sibling()
+                    if not current_element or (
+                            current_element.get('class') and 'dayContainer' in current_element.get('class')):
+                        break
 
-    index = 0
-    for i, day in enumerate(days):
-        # محاسبه تعداد آیتم‌های این روز
-        day_items = items_per_day + (1 if i < remainder else 0)
+                    time_meal = current_element.find("span", class_="TimeMeal")
+                    current_meal_type = None
 
-        # تقسیم غذاها به دسته‌های مختلف
-        if day_items >= 7:  # الگوی اصلی: 1 صبحانه + 4 ناهار + 2 شام
-            schedule[day] = {
-                "صبحانه": foods[index] if index < len(foods) else "نامشخص",
-                "ناهار": foods[index + 1:index + 5] if index + 5 <= len(foods) else [],
-                "شام": foods[index + 5:index + 7] if index + 7 <= len(foods) else []
-            }
-        elif day_items >= 4:  # الگوی پنج‌شنبه: 1 صبحانه + 3 ناهار + 0 شام
-            schedule[day] = {
-                "صبحانه": foods[index] if index < len(foods) else "نامشخص",
-                "ناهار": foods[index + 1:index + 4] if index + 4 <= len(foods) else [],
-                "شام": []
-            }
-        else:  # اگر تعداد کمتری غذا وجود داشت
-            breakfast_count = min(1, day_items)
-            lunch_count = day_items - breakfast_count
+                    if time_meal:
+                        meal_text = time_meal.get_text(strip=True).lower()
+                        if "صبحانه" in meal_text:
+                            current_meal_type = "صبحانه"
+                        elif "ناهار" in meal_text or "نهار" in meal_text:
+                            current_meal_type = "ناهار"
+                        elif "شام" in meal_text:
+                            current_meal_type = "شام"
 
-            schedule[day] = {
-                "صبحانه": foods[index] if breakfast_count > 0 and index < len(foods) else "نامشخص",
-                "ناهار": foods[index + 1:index + 1 + lunch_count] if index + 1 + lunch_count <= len(foods) else [],
-                "شام": []
-            }
+                    if current_meal_type:
+                        meal_divs = current_element.find_all("div", id="MealDiv")
+                        for meal_div in meal_divs:
+                            food_labels = meal_div.find_all("label", class_="reserveFoodCheckBox")
+                            for label in food_labels:
+                                if label.get('for') and label.get_text(strip=True):
+                                    food_text = clean_food_name(label.get_text(strip=True))
+                                    if food_text and food_text not in schedule[day_name][current_meal_type]:
+                                        schedule[day_name][current_meal_type].append(food_text)
 
-        index += day_items
+        return schedule
 
-    return schedule
+    except Exception as e:
+        print(f"خطا در خواندن برنامه غذایی: {e}")
+        return {
+            day: {"تاریخ": "", "صبحانه": [], "ناهار": [], "شام": []}
+            for day in ["شنبه", "یک‌شنبه", "دوشنبه", "سه‌شنبه", "چهارشنبه", "پنج‌شنبه"]
+        }
+
+
+def format_meals(meals):
+    """قالب‌بندی وعده‌های غذایی"""
+    if not meals:
+        return "⚠️ اطلاعات منو موجود نیست"
+
+    message = ""
+    message += "🍳 صبحانه:\n"
+    message += "".join(f"    • {f}\n" for f in meals['صبحانه']) or "    • موجود نیست\n"
+    message += "🍛 ناهار:\n"
+    message += "".join(f"    • {f}\n" for f in meals['ناهار']) or "    • موجود نیست\n"
+    message += "🍲 شام:\n"
+    message += "".join(f"    • {f}\n" for f in meals['شام']) or "    • موجود نیست\n"
+    return message
+
+
+async def handle_food_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """پردازش سوالات مربوط به منوی غذا"""
+    try:
+        chat_id = update.effective_chat.id
+        message_text = update.message.text.lower()
+        is_today = "امروز" in message_text or "today" in message_text
+
+        # دریافت دانشگاه کاربر
+        university_result = execute_query(
+            "SELECT university FROM users WHERE chat_id = %s",
+            (chat_id,),
+            fetch="one"
+        )
+
+        if not university_result:
+            await update.message.reply_text(
+                "ابتدا باید دانشگاه خود را انتخاب کنید. از دستور /start استفاده کنید.",
+                reply_markup=MAIN_MARKUP
+            )
+            return
+
+        university = university_result[0]
+
+        # دریافت منوی غذا
+        try:
+            if university == "خوارزمی":
+                with open("kharazmi_menu.html", "r", encoding="utf-8") as f:
+                    html = f.read()
+            else:
+                with open("tehran_menu.html", "r", encoding="utf-8") as f:
+                    html = f.read()
+        except FileNotFoundError:
+            logging.error(f"فایل منوی {university} یافت نشد.")
+            await update.message.reply_text(
+                f"اطلاعات منوی دانشگاه {university} در دسترس نیست. لطفاً بعداً تلاش کنید.",
+                reply_markup=MAIN_MARKUP
+            )
+            return
+
+        # پردازش HTML و استخراج برنامه غذایی
+        schedule = parse_food_schedule(html, university)
+
+        if is_today:
+            today_name = get_today_name()
+            if today_name == "جمعه":
+                await update.message.reply_text("📵 امروز (جمعه) غذا سرو نمی‌شود.", reply_markup=MAIN_MARKUP)
+                return
+
+            # بررسی برای دانشگاه تهران
+            if university == "تهران" and today_name not in schedule:
+                await update.message.reply_text(f"📵 امروز ({today_name}) در دانشگاه تهران غذا سرو نمی‌شود.",
+                                                reply_markup=MAIN_MARKUP)
+                return
+
+            meals = schedule.get(today_name, {})
+            response = f"🍽 منوی امروز ({today_name}) دانشگاه {university}:\n\n"
+            response += format_meals(meals)
+        else:
+            response = f"🗓 منوی هفته جاری دانشگاه {university}:\n\n"
+            for day, meals in schedule.items():
+                response += f"📅 {day}:\n{format_meals(meals)}\n\n"
+
+        await update.message.reply_text(response, reply_markup=MAIN_MARKUP)
+
+    except Exception as e:
+        logging.error(f"خطا در پردازش سوال غذا: {e}")
+        await update.message.reply_text(
+            "متأسفانه در دریافت اطلاعات غذا مشکلی پیش آمد. لطفا دوباره تلاش کنید.",
+            reply_markup=MAIN_MARKUP
+        )
+
+
+# ─── دستورات مستقیم برای غذا ────────────────────────────────────────
+async def today_food(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """دستور مستقیم برای نمایش غذای امروز"""
+    # افزودن کلمه "امروز" به متن تا handle_food_query متوجه شود
+    update.message.text = "غذای امروز"
+    await handle_food_query(update, context)
+
+
+async def week_food(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """دستور مستقیم برای نمایش غذای هفته"""
+    update.message.text = "غذای این هفته"
+    await handle_food_query(update, context)
+
+
+def setup_food_handlers(application):
+    """ثبت تمام هندلرهای مربوط به غذا"""
+    application.add_handler(CommandHandler("today", today_food))
+    application.add_handler(CommandHandler("week", week_food))
+    application.add_handler(MessageHandler(filters.Regex(r'^(غذای امروز|منوی امروز)$'), today_food))
+    application.add_handler(MessageHandler(filters.Regex(r'^(غذای هفته|منوی هفته)$'), week_food))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_food_query))
+
 
 # ─── توابع لاگینگ و زمان‌بندی ───────────────────────────────────────
 def setup_logging():
@@ -341,6 +468,7 @@ def schedule_reminder_for_user(chat_id, university):
     job_id = f"reminder_{chat_id}_{university}"
 
     # برای تست: اجرای هر دقیقه (در محیط واقعی باید به تنظیمات اصلی تغییر کند)
+
     # scheduler.add_job(
     #     send_reminder,
     #     'cron',
@@ -517,107 +645,8 @@ async def choose_university(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         return CHOOSING
 
 
-async def handle_food_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """پردازش سوالات مربوط به غذا"""
-    chat_id = update.effective_chat.id
-    query_text = update.message.text.lower()
-
-    # بررسی نوع سوال (امروز یا هفته)
-    is_today = "امروز" in query_text
-
-    try:
-        # دریافت دانشگاه کاربر
-        university_result = execute_query(
-            "SELECT university FROM users WHERE chat_id = %s",
-            (chat_id,),
-            fetch="one"
-        )
-
-        if not university_result:
-            await update.message.reply_text(
-                "ابتدا باید دانشگاه خود را انتخاب کنید. از دستور /start استفاده کنید.",
-                reply_markup=MAIN_MARKUP
-            )
-            return
-
-        university = university_result[0]
-
-        # دریافت منوی غذا
-        if university == "خوارزمی":
-            with open("kharazmi_menu.html", "r", encoding="utf-8") as f:
-                html = f.read()
-        else:
-            with open("tehran_menu.html", "r", encoding="utf-8") as f:
-                html = f.read()
-
-        schedule = parse_food_schedule(html)
-
-        # برای مثال، پاسخ موقت:
-        if is_today:
-            today_name = get_today_name()
-            if today_name == "جمعه":
-                await update.message.reply_text("📵 امروز (جمعه) غذا سرو نمی‌شود.", reply_markup=MAIN_MARKUP)
-                return
-
-            meals = schedule.get(today_name, {})
-            response = f"🍽 منوی امروز ({today_name}) دانشگاه {university}:\n\n"
-            response += format_meals(meals)
-        else:
-            response = f"🗓 منوی هفته جاری دانشگاه {university}:\n\n"
-            for day, meals in schedule.items():
-                response += f"📅 {day}:\n{format_meals(meals)}\n"
-
-        await update.message.reply_text(response, reply_markup=MAIN_MARKUP)
 
 
-    except Exception as e:
-        logging.error(f"خطا در پردازش سوال غذا: {e}")
-        await update.message.reply_text(
-            "متأسفانه در دریافت اطلاعات غذا مشکلی پیش آمد. لطفا دوباره تلاش کنید.",
-            reply_markup=MAIN_MARKUP
-        )
-
-
-def format_meals(meals):
-    """قالب‌بندی وعده‌های غذایی"""
-    if not meals:
-        return "⚠️ اطلاعات منو موجود نیست"
-
-    response = ""
-    response += f"🍞 صبحانه: {meals.get('صبحانه', '---')}\n"
-
-    response += "🍛 ناهار:\n"
-    for item in meals.get('ناهار', []):
-        response += f"  - {item}\n"
-
-    dinner = meals.get('شام', [])
-    response += "🍲 شام:\n"
-    if dinner:
-        for item in dinner:
-            response += f"  - {item}\n"
-    else:
-        response += "  - ندارد\n"
-
-    return response
-
-
-# ─── دستورات مستقیم برای غذا ────────────────────────────────────────
-async def today_food(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """دستور مستقیم برای نمایش غذای امروز"""
-    await handle_food_query(update, context)
-
-
-async def week_food(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """دستور مستقیم برای نمایش غذای هفته"""
-    await handle_food_query(update, context)
-
-def setup_food_handlers(application):
-    """ثبت تمام هندلرهای مربوط به غذا"""
-    application.add_handler(CommandHandler("today", today_food))
-    application.add_handler(CommandHandler("week", week_food))
-    application.add_handler(MessageHandler(filters.Regex(r'^(غذای امروز|منوی امروز)$'), today_food))
-    application.add_handler(MessageHandler(filters.Regex(r'^(غذای هفته|منوی هفته)$'), week_food))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_food_query))
 # ─── تنظیمات و راه‌اندازی ربات ───────────────────────────────────
 if __name__ == "__main__":
     # تنظیم سیستم لاگ

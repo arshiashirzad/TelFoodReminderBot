@@ -1,3 +1,0 @@
-python-telegram-bot==20.5
-APScheduler==3.10.2
-mysql-connector-python==8.0.34

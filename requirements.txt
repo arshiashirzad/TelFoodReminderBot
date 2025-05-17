@@ -3,3 +3,4 @@ beautifulsoup4
 mysql-connector-python
 SQLAlchemy==2.0.30
 apscheduler==3.10.4
+python-dotenv

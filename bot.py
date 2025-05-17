@@ -58,6 +58,8 @@ SQLALCHEMY_URL = (
     f"@{MYSQL_CONFIG['host']}:{MYSQL_CONFIG['port']}/{MYSQL_CONFIG['database']}"
 )
 
+print("Connection string:", SQLALCHEMY_URL)
+
 MAX_RETRIES = 3
 DB_RECONNECT_INTERVAL = 60  # seconds
 

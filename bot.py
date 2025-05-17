@@ -36,13 +36,16 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
 from apscheduler.events import EVENT_JOB_ERROR, EVENT_JOB_EXECUTED
 
+from dotenv import load_dotenv
+load_dotenv()
+
 # ─── CONFIG ──────────────────────────────────────────────────────
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 MYSQL_CONFIG = {
     "host": os.getenv("DB_HOST"),
     "user": os.getenv("DB_USER"),
     "password": os.getenv("DB_PASSWORD"),
-    "database": "foodreminder",
+    "database": os.getenv("DB_NAME"),
     "pool_name": "food_reminder_pool",
     "pool_size": 5,
     "pool_reset_session": True
@@ -60,30 +63,19 @@ MAIN_MARKUP = ReplyKeyboardMarkup([
     ["غذای این هفته؟"],
 ], resize_keyboard=True)
 
-# ─── ثابت‌های یادآوری ─────────────────────────────────────────────
-REMINDER_CALLBACK_RESERVED = "reminder_reserved"
-REMINDER_CALLBACK_LATER = "reminder_later"
-REMINDER_INTERVAL_HOURS = 3  # فاصله زمانی برای یادآوری مجدد (ساعت)
-
 # ─── تنظیمات دانشگاه‌ها ───────────────────────────────────────────
 UNIVERSITY_CONFIG = {
     "خوارزمی": {
-        "day_of_week": "wed",  # چهارشنبه
+        "day_of_week": "thu",
         "hour": 12,
         "minute": 0,
-        "reminder_message": "⏰ یادآوری: ۲۴ ساعت تا پایان مهلت رزرو غذای دانشگاه خوارزمی باقی مانده!",
-        "deadline_day": "thu",  # پنج‌شنبه
-        "deadline_hour": 12,
-        "deadline_minute": 0
+        "reminder_message": "⏰ یادآوری: ۲۴ ساعت تا پایان مهلت رزرو غذای دانشگاه خوارزمی باقی مانده!"
     },
     "تهران": {
         "day_of_week": "tue",
         "hour": 12,
         "minute": 0,
-        "reminder_message": "⏰ یادآوری: ۲۴ ساعت تا پایان مهلت رزرو غذای دانشگاه تهران باقی مانده!",
-        "deadline_day": "wed",
-        "deadline_hour": 12,
-        "deadline_minute": 0
+        "reminder_message": "⏰ یادآوری: ۲۴ ساعت تا پایان مهلت رزرو غذای دانشگاه تهران باقی مانده!"
     },
 }
 
@@ -99,6 +91,7 @@ scheduler = AsyncIOScheduler(
         'misfire_grace_time': 3600  # حداکثر تاخیر مجاز: 1 ساعت
     }
 )
+
 
 # ─── توابع دیتابیس ────────────────────────────────────────────────
 def init_db_pool():
@@ -230,39 +223,70 @@ def create_required_tables():
 def clean_food_name(food):
     return re.sub(r"(،|\(|\[)?\s*(رایگان|\d{2,3}(,\d{3})?)\s*(تومان|ریال)?\)?$", "", food).strip()
 
-
 def get_today_name():
     weekdays = ["دوشنبه", "سه‌شنبه", "چهارشنبه", "پنج‌شنبه", "جمعه", "شنبه", "یک‌شنبه"]
-    today = datetime.now().weekday()  # 0 = دوشنبه، 6 = یک‌شنبه
-    return weekdays[today]
+    return weekdays[datetime.today().weekday()]
+
 
 def parse_food_schedule(html_content):
     """پردازش HTML و استخراج منوی غذا"""
     soup = BeautifulSoup(html_content, "html.parser")
     labels = soup.find_all("label", class_="reserveFoodCheckBox")
+
+    # اگر هیچ لیبلی پیدا نشد، روش دیگری را امتحان کنیم
+    if not labels:
+        # جستجو برای عناصر دیگر که ممکن است حاوی اطلاعات غذا باشند
+        labels = soup.find_all("div", class_="food-item") or soup.find_all("span", class_="food-name")
+
+    # اگر هنوز هیچ عنصری پیدا نشد، خطا را گزارش کنیم
+    if not labels:
+        logging.error("هیچ عنصر غذایی در HTML یافت نشد")
+        return {"خطا": "اطلاعات غذا قابل استخراج نیست"}
+
     foods = [clean_food_name(label.get_text(strip=True)) for label in labels]
+
+    # برای اطمینان از اینکه کافی غذا وجود دارد
+    if len(foods) < 30:  # تعداد حداقل مورد انتظار
+        logging.warning(f"تعداد غذاهای یافت شده کمتر از حد انتظار است: {len(foods)}")
 
     days = ["شنبه", "یک‌شنبه", "دوشنبه", "سه‌شنبه", "چهارشنبه", "پنج‌شنبه"]
     schedule = {}
+
+    # روش انعطاف‌پذیرتر برای تقسیم غذاها بین روزها
+    items_per_day = len(foods) // len(days)
+    remainder = len(foods) % len(days)
+
     index = 0
+    for i, day in enumerate(days):
+        # محاسبه تعداد آیتم‌های این روز
+        day_items = items_per_day + (1 if i < remainder else 0)
 
-    for day in days[:-1]:
-        schedule[day] = {
-            "صبحانه": foods[index],
-            "ناهار": foods[index + 1:index + 5],
-            "شام": foods[index + 5:index + 7]
-        }
-        index += 7
+        # تقسیم غذاها به دسته‌های مختلف
+        if day_items >= 7:  # الگوی اصلی: 1 صبحانه + 4 ناهار + 2 شام
+            schedule[day] = {
+                "صبحانه": foods[index] if index < len(foods) else "نامشخص",
+                "ناهار": foods[index + 1:index + 5] if index + 5 <= len(foods) else [],
+                "شام": foods[index + 5:index + 7] if index + 7 <= len(foods) else []
+            }
+        elif day_items >= 4:  # الگوی پنج‌شنبه: 1 صبحانه + 3 ناهار + 0 شام
+            schedule[day] = {
+                "صبحانه": foods[index] if index < len(foods) else "نامشخص",
+                "ناهار": foods[index + 1:index + 4] if index + 4 <= len(foods) else [],
+                "شام": []
+            }
+        else:  # اگر تعداد کمتری غذا وجود داشت
+            breakfast_count = min(1, day_items)
+            lunch_count = day_items - breakfast_count
 
-    schedule["پنج‌شنبه"] = {
-        "صبحانه": foods[index],
-        "ناهار": foods[index + 1:index + 4],
-        "شام": []
-    }
+            schedule[day] = {
+                "صبحانه": foods[index] if breakfast_count > 0 and index < len(foods) else "نامشخص",
+                "ناهار": foods[index + 1:index + 1 + lunch_count] if index + 1 + lunch_count <= len(foods) else [],
+                "شام": []
+            }
+
+        index += day_items
 
     return schedule
-
-
 
 # ─── توابع لاگینگ و زمان‌بندی ───────────────────────────────────────
 def setup_logging():
@@ -282,237 +306,23 @@ async def job_listener(event):
         logging.info(f"Job با ID {event.job_id} با موفقیت اجرا شد.")
 
 
-def calculate_remaining_time(university: str) -> timedelta:
-    """محاسبه زمان باقی‌مانده تا پایان مهلت رزرو"""
-    now = datetime.now()
-    config = UNIVERSITY_CONFIG.get(university, {})
-
-    # تبدیل نام روز به عدد (0 برای دوشنبه تا 6 برای یک‌شنبه)
-    day_map = {"mon": 0, "tue": 1, "wed": 2, "thu": 3, "fri": 4, "sat": 5, "sun": 6}
-    deadline_day_num = day_map.get(config.get("deadline_day", "thu"), 3)  # پیش‌فرض پنج‌شنبه
-
-    # محاسبه تعداد روزهای باقی‌مانده تا روز مهلت
-    current_day = now.weekday()
-    days_until_deadline = (deadline_day_num - current_day) % 7
-
-    # ایجاد تاریخ مهلت
-    deadline = now + timedelta(days=days_until_deadline)
-    deadline = deadline.replace(
-        hour=config.get("deadline_hour", 12),
-        minute=config.get("deadline_minute", 0),
-        second=0,
-        microsecond=0
-    )
-
-    # اگر مهلت امروز است و زمان آن گذشته، به هفته بعد برو
-    if days_until_deadline == 0 and now > deadline:
-        deadline += timedelta(days=7)
-
-    return deadline - now
-
-# async def send_reminder(chat_id, message, university):
-#     """ارسال یادآوری به کاربر"""
-#     try:
-#         await bot_app.bot.send_message(chat_id=chat_id, text=message)
-#         logging.info(f"یادآوری برای کاربر {chat_id} (دانشگاه {university}) ارسال شد")
-#     except Exception as e:
-#         logging.error(f"خطا در ارسال یادآوری به کاربر {chat_id}: {e}")
-#         # ذخیره یادآوری ناموفق برای تلاش مجدد
-#         try:
-#             execute_query(
-#                 "INSERT INTO failed_reminders (chat_id, university, message) VALUES (%s, %s, %s)",
-#                 (chat_id, university, message),
-#                 commit=True
-#             )
-#             logging.info(f"یادآوری ناموفق برای کاربر {chat_id} در دیتابیس ذخیره شد")
-#         except Exception as db_err:
-#             logging.error(f"خطا در ذخیره یادآوری ناموفق: {db_err}")
-
-
-async def send_reminder(chat_id: int, university: str):
-    """ارسال یادآوری"""
+async def send_reminder(chat_id, message, university):
+    """ارسال یادآوری به کاربر"""
     try:
-        # بررسی وجود دانشگاه در تنظیمات
-        if university not in UNIVERSITY_CONFIG:
-            logging.error(f"دانشگاه {university} در تنظیمات یافت نشد")
-            return False
-
-        # ایجاد پیام یادآوری
-        message = UNIVERSITY_CONFIG[university]["reminder_message"]
-
-        # اضافه کردن دکمه‌های اینلاین
-        keyboard = [
-            [
-                InlineKeyboardButton("✅ رزرو کردم", callback_data=REMINDER_CALLBACK_RESERVED),
-                InlineKeyboardButton("⏰ بعداً یادآوری کن", callback_data=REMINDER_CALLBACK_LATER)
-            ]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-
-        # ارسال پیام
-        await bot_app.bot.send_message(
-            chat_id=chat_id,
-            text=message,
-            reply_markup=reply_markup
-        )
+        await bot_app.bot.send_message(chat_id=chat_id, text=message)
         logging.info(f"یادآوری برای کاربر {chat_id} (دانشگاه {university}) ارسال شد")
-        return True
     except Exception as e:
         logging.error(f"خطا در ارسال یادآوری به کاربر {chat_id}: {e}")
         # ذخیره یادآوری ناموفق برای تلاش مجدد
-        store_failed_reminder(chat_id, university, UNIVERSITY_CONFIG[university]["reminder_message"])
-        return False
-
-def store_failed_reminder(chat_id, university, message):
-    """ذخیره یادآوری ناموفق در دیتابیس برای تلاش مجدد"""
-    try:
-        execute_query(
-            "INSERT INTO failed_reminders (chat_id, university, message) VALUES (%s, %s, %s)",
-            (chat_id, university, message),
-            commit=True
-        )
-        logging.info(f"یادآوری ناموفق برای کاربر {chat_id} در دیتابیس ذخیره شد")
-    except Exception as e:
-        logging.error(f"خطا در ذخیره یادآوری ناموفق: {e}")
-
-
-async def process_failed_reminders():
-    """پردازش یادآوری‌های ناموفق و تلاش مجدد"""
-    try:
-        failed_reminders = execute_query(
-            "SELECT id, chat_id, university, message, retry_count FROM failed_reminders WHERE retry_count < %s",
-            (MAX_RETRIES,),
-            fetch="all"
-        )
-
-        if not failed_reminders:
-            return
-
-        logging.info(f"تعداد {len(failed_reminders)} یادآوری ناموفق برای پردازش یافت شد")
-
-        for reminder in failed_reminders:
-            reminder_id, chat_id, university, message, retry_count = reminder
-
-            # تلاش برای ارسال مجدد یادآوری
-            try:
-                # اضافه کردن دکمه‌های اینلاین
-                keyboard = [
-                    [
-                        InlineKeyboardButton("✅ رزرو کردم", callback_data=REMINDER_CALLBACK_RESERVED),
-                        InlineKeyboardButton("⏰ بعداً یادآوری کن", callback_data=REMINDER_CALLBACK_LATER)
-                    ]
-                ]
-                reply_markup = InlineKeyboardMarkup(keyboard)
-
-                await bot_app.bot.send_message(
-                    chat_id=chat_id,
-                    text=message,
-                    reply_markup=reply_markup
-                )
-
-                # حذف رکورد از جدول یادآوری‌های ناموفق
-                execute_query(
-                    "DELETE FROM failed_reminders WHERE id = %s",
-                    (reminder_id,),
-                    commit=True
-                )
-
-                logging.info(f"یادآوری ناموفق با ID {reminder_id} با موفقیت ارسال و از دیتابیس حذف شد")
-
-            except Exception as e:
-                # افزایش شمارنده تلاش‌ها
-                new_retry_count = retry_count + 1
-                execute_query(
-                    "UPDATE failed_reminders SET retry_count = %s WHERE id = %s",
-                    (new_retry_count, reminder_id),
-                    commit=True
-                )
-
-                if new_retry_count >= MAX_RETRIES:
-                    logging.error(
-                        f"حداکثر تعداد تلاش برای یادآوری با ID {reminder_id} به کاربر {chat_id} انجام شد. یادآوری حذف خواهد شد.")
-                    execute_query(
-                        "DELETE FROM failed_reminders WHERE id = %s",
-                        (reminder_id,),
-                        commit=True
-                    )
-                else:
-                    logging.warning(
-                        f"تلاش مجدد {new_retry_count}/{MAX_RETRIES} برای یادآوری با ID {reminder_id} ناموفق بود: {e}")
-
-    except Exception as e:
-        logging.error(f"خطا در پردازش یادآوری‌های ناموفق: {e}")
-
-
-async def handle_reminder_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """پردازش پاسخ کاربر به دکمه‌های یادآوری"""
-    query = update.callback_query
-    await query.answer()  # پاسخ به کالبک برای حذف نشانگر بارگذاری
-
-    chat_id = query.from_user.id
-    callback_data = query.data
-
-    # دریافت دانشگاه کاربر از دیتابیس
-    user_university = execute_query(
-        "SELECT university FROM users WHERE chat_id = %s",
-        (chat_id,),
-        fetch="one"
-    )
-
-    if not user_university:
-        await query.edit_message_text(
-            text="⚠️ اطلاعات شما یافت نشد. لطفا با استفاده از دستور /start دانشگاه خود را انتخاب کنید.")
-        return
-
-    university = user_university[0]
-
-    if callback_data == REMINDER_CALLBACK_RESERVED:
-        # کاربر اعلام کرده که غذا را رزرو کرده است
-        await query.edit_message_text(text="✅ ممنون از اطلاع‌رسانی شما. یادآوری بعدی در زمان مناسب ارسال خواهد شد.")
-
-    elif callback_data == REMINDER_CALLBACK_LATER:
-        # کاربر درخواست یادآوری مجدد کرده است
-        remaining_time = calculate_remaining_time(university)
-
-        if remaining_time.total_seconds() <= 0:
-            # زمان رزرو تمام شده است
-            await query.edit_message_text(text="⚠️ متأسفانه زمان رزرو به پایان رسیده است.")
-            return
-
-        if remaining_time.total_seconds() < REMINDER_INTERVAL_HOURS * 3600:
-            # کمتر از زمان یادآوری مجدد باقی مانده است
-            hours_left = remaining_time.total_seconds() // 3600
-            minutes_left = (remaining_time.total_seconds() % 3600) // 60
-
-            await query.edit_message_text(
-                text=f"""⚠️ کمتر از {REMINDER_INTERVAL_HOURS} ساعت تا پایان مهلت رزرو باقی مانده است!
-            زمان باقی‌مانده: {int(hours_left)} ساعت و {int(minutes_left)} دقیقه
-            لطفاً همین الان رزرو خود را انجام دهید."""
+        try:
+            execute_query(
+                "INSERT INTO failed_reminders (chat_id, university, message) VALUES (%s, %s, %s)",
+                (chat_id, university, message),
+                commit=True
             )
-        else:
-            # زمان کافی برای یادآوری مجدد وجود دارد
-            # زمان‌بندی یادآوری مجدد
-            reminder_time = datetime.now() + timedelta(hours=REMINDER_INTERVAL_HOURS)
-            job_id = f"reminder_{chat_id}_{int(time.time())}"
-
-            scheduler.add_job(
-                send_reminder,
-                'date',
-                run_date=reminder_time,
-                args=[chat_id, university],
-                id=job_id,
-                replace_existing=True
-            )
-
-            hours_left = remaining_time.total_seconds() // 3600
-            minutes_left = (remaining_time.total_seconds() % 3600) // 60
-
-            await query.edit_message_text(
-                text=f"""⏰ یادآوری مجدد برای {REMINDER_INTERVAL_HOURS} ساعت بعد تنظیم شد.
-                زمان باقی‌مانده تا پایان مهلت رزرو: {int(hours_left)} ساعت و {int(minutes_left)} دقیقه"""
-            )
-
-            logging.info(f"یادآوری مجدد برای کاربر {chat_id} در {reminder_time} تنظیم شد")
+            logging.info(f"یادآوری ناموفق برای کاربر {chat_id} در دیتابیس ذخیره شد")
+        except Exception as db_err:
+            logging.error(f"خطا در ذخیره یادآوری ناموفق: {db_err}")
 
 
 def schedule_reminder_for_user(chat_id, university):
@@ -808,7 +618,6 @@ def setup_food_handlers(application):
     application.add_handler(MessageHandler(filters.Regex(r'^(غذای امروز|منوی امروز)$'), today_food))
     application.add_handler(MessageHandler(filters.Regex(r'^(غذای هفته|منوی هفته)$'), week_food))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_food_query))
-    application.add_handler(CallbackQueryHandler(handle_reminder_callback))
 # ─── تنظیمات و راه‌اندازی ربات ───────────────────────────────────
 if __name__ == "__main__":
     # تنظیم سیستم لاگ

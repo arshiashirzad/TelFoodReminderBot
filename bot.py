@@ -44,7 +44,7 @@ BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 
 MYSQL_CONFIG = {
     "host": os.getenv("MYSQLHOST", "mysql.railway.internal"),
-    "port": os.getenv("MYSQLPORT", "3306"),  # add port
+    "port": int(os.getenv("MYSQLPORT", "3306")),  # add port
     "user": os.getenv("MYSQLUSER"),
     "password": os.getenv("MYSQLPASSWORD"),
     "database": os.getenv("MYSQLDATABASE"),
@@ -57,8 +57,6 @@ SQLALCHEMY_URL = (
     f"mysql+pymysql://{MYSQL_CONFIG['user']}:{MYSQL_CONFIG['password']}"
     f"@{MYSQL_CONFIG['host']}:{MYSQL_CONFIG['port']}/{MYSQL_CONFIG['database']}"
 )
-
-print("Connection string:", SQLALCHEMY_URL)
 
 MAX_RETRIES = 3
 DB_RECONNECT_INTERVAL = 60  # seconds

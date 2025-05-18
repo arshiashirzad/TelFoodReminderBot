@@ -80,9 +80,9 @@ UNIVERSITY_CONFIG = {
         "reminder_message": "⏰ یادآوری: ۲۴ ساعت تا پایان مهلت رزرو غذای دانشگاه خوارزمی باقی مانده!"
     },
     "تهران": {
-        "day_of_week": "tue",
-        "hour": 12,
-        "minute": 0,
+        "day_of_week": "sun",
+        "hour": 15,
+        "minute": 32,
         "reminder_message": "⏰ یادآوری: ۲۴ ساعت تا پایان مهلت رزرو غذای دانشگاه تهران باقی مانده!"
     },
 }

@@ -18,6 +18,7 @@ from telegram.ext import PicklePersistence
 
 import mysql.connector
 from mysql.connector import pooling
+
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import sessionmaker
@@ -36,25 +37,30 @@ from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
 from apscheduler.events import EVENT_JOB_ERROR, EVENT_JOB_EXECUTED
 
 from dotenv import load_dotenv
-
 load_dotenv()
-
-
 
 # ─── CONFIG ──────────────────────────────────────────────────────
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+
 MYSQL_CONFIG = {
-    "host": os.getenv("DB_HOST"),
-    "user": os.getenv("DB_USER"),
-    "password": os.getenv("DB_PASSWORD"),
-    "database": os.getenv("DB_NAME"),
-    "pool_name": "food_reminder_pool",
+    "host": os.getenv("MYSQLHOST", "mysql.railway.internal"),
+    "port": int(os.getenv("MYSQLPORT", "3306")),
+    "user": os.getenv("MYSQLUSER"),
+    "password": os.getenv("MYSQLPASSWORD"),
+    "database": os.getenv("MYSQLDATABASE"),
     "pool_size": 5,
-    "pool_reset_session": True
+    "pool_name": "mypool",
+    "connect_timeout": 30
 }
-SQLALCHEMY_URL = f"mysql+pymysql://{MYSQL_CONFIG['user']}:{MYSQL_CONFIG['password']}@{MYSQL_CONFIG['host']}/{MYSQL_CONFIG['database']}"
+
+SQLALCHEMY_URL = (
+    f"mysql+pymysql://{MYSQL_CONFIG['user']}:{MYSQL_CONFIG['password']}"
+    f"@{MYSQL_CONFIG['host']}:{MYSQL_CONFIG['port']}/{MYSQL_CONFIG['database']}"
+)
+
 MAX_RETRIES = 3
-DB_RECONNECT_INTERVAL = 60  # ثانیه
+DB_RECONNECT_INTERVAL = 60  # seconds
+
 
 # ─── وضعیت گفتگو ─────────────────────────────────────────────────
 CHOOSING = 0

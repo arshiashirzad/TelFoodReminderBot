@@ -74,7 +74,7 @@ MAIN_MARKUP = ReplyKeyboardMarkup([
 # ─── تنظیمات دانشگاه‌ها ───────────────────────────────────────────
 UNIVERSITY_CONFIG = {
     "خوارزمی": {
-        "day_of_week": "wen",
+        "day_of_week": "wed",
         "hour": 12,
         "minute": 0,
         "reminder_message": "⏰ یادآوری: ۲۴ ساعت تا پایان مهلت رزرو غذای دانشگاه خوارزمی باقی مانده!"

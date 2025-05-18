@@ -88,6 +88,15 @@ UNIVERSITY_CONFIG = {
 }
 
 # ─── متغیرهای سراسری ───────────────────────────────────────────
+try:
+    # For Python 3.9+
+    from zoneinfo import ZoneInfo
+    tehran_tz = ZoneInfo("Asia/Tehran")
+except ImportError:
+    # For older versions
+    import pytz
+    tehran_tz = pytz.timezone("Asia/Tehran")
+
 db_pool = None
 bot_app = None
 scheduler = AsyncIOScheduler(
@@ -97,7 +106,8 @@ scheduler = AsyncIOScheduler(
     job_defaults={
         'coalesce': True,  # فقط یکبار اجرا در صورت از دست دادن چندین زمان
         'misfire_grace_time': 3600  # حداکثر تاخیر مجاز: 1 ساعت
-    }
+    },
+    timezone=tehran_tz
 )
 
 

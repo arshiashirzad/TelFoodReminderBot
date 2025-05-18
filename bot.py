@@ -106,7 +106,7 @@ def init_db_pool():
     """ایجاد پول اتصال به دیتابیس"""
     global db_pool
     try:
-        logging.info("تلاش برای ایجاد پول اتصال به دیتابیس...")
+        logging.info("Try to connect to database pool (create)")
         db_pool = mysql.connector.pooling.MySQLConnectionPool(**MYSQL_CONFIG)
 
         # بررسی اتصال با گرفتن یک اتصال از پول
@@ -118,13 +118,13 @@ def init_db_pool():
             cursor.fetchone()
             cursor.close()
             conn.close()
-            logging.info("اتصال به دیتابیس با موفقیت برقرار شد")
+            logging.info("connected to database succesfully")
             return True
         else:
-            logging.error("نمی‌توان اتصال معتبر از پول دریافت کرد")
+            logging.error("cannot connect to db")
             return False
     except mysql.connector.Error as err:
-        logging.error(f"خطا در ایجاد پول اتصال به دیتابیس: {err}")
+        logging.error(f"fatal error in connecting to pool{err}")
         return False
 
 
@@ -140,7 +140,7 @@ def get_db_connection():
             init_db_pool()  # Try to reinitialize the pool
             return db_pool.get_connection() if db_pool else None
         except mysql.connector.Error as err:
-            logging.error(f"خطا در دریافت اتصال از پول: {err}")
+            logging.error(f"pool error {err}")
             return None
     return None
 
@@ -152,7 +152,7 @@ def execute_query(query, params=None, commit=False, fetch=None):
         try:
             conn = get_db_connection()
             if not conn:
-                logging.error("عدم اتصال به دیتابیس")
+                logging.error("database connection error")
                 time.sleep(1)
                 retries += 1
                 continue
@@ -177,7 +177,7 @@ def execute_query(query, params=None, commit=False, fetch=None):
             retries += 1
             logging.error(f"خطای دیتابیس ({retries}/{MAX_RETRIES}): {err}")
             if retries >= MAX_RETRIES:
-                logging.error("حداکثر تعداد تلاش‌ها انجام شد. عملیات ناموفق بود.")
+                logging.error("maximum tries failed.")
                 raise
             time.sleep(1)  # کمی صبر قبل از تلاش مجدد
 
@@ -187,7 +187,7 @@ def create_required_tables():
     try:
         conn = get_db_connection()
         if not conn:
-            logging.error("عدم اتصال به دیتابیس هنگام ایجاد جداول")
+            logging.error("fatal error in creating tables (connection error)")
             return False
 
         cursor = conn.cursor()
@@ -220,11 +220,11 @@ def create_required_tables():
         cursor.close()
         conn.close()
 
-        logging.info("جداول مورد نیاز با موفقیت ایجاد شدند")
+        logging.info("tables created successfully")
         return True
 
     except mysql.connector.Error as err:
-        logging.error(f"خطا در ایجاد جداول: {err}")
+        logging.error(f"fatal in creating tables: {err}")
         return False
 
 
@@ -234,7 +234,7 @@ def clean_food_name(food):
 def get_today_name():
     """دریافت نام روز هفته امروز به فارسی"""
     today = datetime.now()
-    weekday = today.weekday()  # 0 is Monday, 6 is Sunday
+    weekday = today.weekday()  
 
     days_mapping = {
         0: "دوشنبه",
@@ -434,18 +434,18 @@ def setup_logging():
 async def job_listener(event):
     """گوش دادن به رویدادهای job scheduler"""
     if event.exception:
-        logging.error(f"Job با ID {event.job_id} با خطا مواجه شد: {event.exception}")
+        logging.error(f"Job ID : {event.job_id} error occured {event.exception}")
     else:
-        logging.info(f"Job با ID {event.job_id} با موفقیت اجرا شد.")
+        logging.info(f"Job ID: {event.job_id} done successfully")
 
 
 async def send_reminder(chat_id, message, university):
     """ارسال یادآوری به کاربر"""
     try:
         await bot_app.bot.send_message(chat_id=chat_id, text=message)
-        logging.info(f"یادآوری برای کاربر {chat_id} (دانشگاه {university}) ارسال شد")
+        logging.info(f"sent reminder to : {chat_id} ( {university})")
     except Exception as e:
-        logging.error(f"خطا در ارسال یادآوری به کاربر {chat_id}: {e}")
+        logging.error(f" failed to send reminder to :{chat_id}: {e}")
         # ذخیره یادآوری ناموفق برای تلاش مجدد
         try:
             execute_query(
@@ -453,15 +453,15 @@ async def send_reminder(chat_id, message, university):
                 (chat_id, university, message),
                 commit=True
             )
-            logging.info(f"یادآوری ناموفق برای کاربر {chat_id} در دیتابیس ذخیره شد")
+            logging.info(f"reminder succeffully saved in db for :{chat_id}")
         except Exception as db_err:
-            logging.error(f"خطا در ذخیره یادآوری ناموفق: {db_err}")
+            logging.error(f"error occured in saving reminder:{db_err}")
 
 
 def schedule_reminder_for_user(chat_id, university):
     """برای کاربر یادآوری تنظیم می‌کند"""
     if university not in UNIVERSITY_CONFIG:
-        logging.error(f"دانشگاه نامعتبر برای تنظیم یادآوری: {university}")
+        logging.error(f"university not true:{university}")
         return
 
     config = UNIVERSITY_CONFIG[university]
@@ -501,7 +501,7 @@ def schedule_reminder_for_user(chat_id, university):
         }
     )
 
-    logging.info(f"یادآوری cron برای کاربر {chat_id} تنظیم شد (اجرای هر دقیقه برای تست)")
+    logging.info(f"reminder of {chat_id} added to cron")
 
 
 async def retry_failed_reminders():
@@ -514,17 +514,17 @@ async def retry_failed_reminders():
         )
 
         if not failed_reminders:
-            logging.info("هیچ یادآوری ناموفقی برای تلاش مجدد وجود ندارد")
+            logging.info("no failed reminders exist")
             return
 
-        logging.info(f"تلاش مجدد برای ارسال {len(failed_reminders)} یادآوری ناموفق")
+        logging.info(f"trying again to send reminder to :{len(failed_reminders)}  ")
 
         for reminder in failed_reminders:
             reminder_id, chat_id, university, message, retry_count = reminder
 
             try:
                 await bot_app.bot.send_message(chat_id=chat_id, text=message)
-                logging.info(f"تلاش مجدد موفق برای یادآوری {reminder_id} به کاربر {chat_id}")
+                logging.info(f"trying again to send reminder to{reminder_id} user :{chat_id}")
 
                 # حذف از لیست ناموفق‌ها
                 execute_query(
@@ -534,7 +534,7 @@ async def retry_failed_reminders():
                 )
 
             except Exception as e:
-                logging.warning(f"تلاش مجدد ناموفق برای یادآوری {reminder_id}: {e}")
+                logging.warning(f"retry to remind to :{reminder_id}: {e}")
 
                 # افزایش شمارنده تلاش
                 new_retry_count = retry_count + 1
@@ -545,10 +545,10 @@ async def retry_failed_reminders():
                 )
 
                 if new_retry_count >= MAX_RETRIES:
-                    logging.error(f"حداکثر تلاش‌ها برای یادآوری {reminder_id} به پایان رسید")
+                    logging.error(f"max retries reached for :{reminder_id} ")
 
     except Exception as e:
-        logging.error(f"خطا در پردازش یادآوری‌های ناموفق: {e}")
+        logging.error(f"fatal error in process: {e}")
 
 
 async def on_startup(application):
@@ -556,11 +556,11 @@ async def on_startup(application):
     # راه‌اندازی scheduler
     scheduler.add_listener(job_listener, EVENT_JOB_ERROR | EVENT_JOB_EXECUTED)
     scheduler.start()
-    logging.info("زمان‌بند با موفقیت راه‌اندازی شد")
+    logging.info("schedueled successfully")
 
     # نمایش تمام job های تنظیم شده
     jobs = scheduler.get_jobs()
-    logging.info(f"تعداد {len(jobs)} job در زمان‌بند تنظیم شده است:")
+    logging.info(f"count : {len(jobs)} jobs scheduled :")
     for job in jobs:
         logging.info(f"Job ID: {job.id}, Next run: {job.next_run_time}")
 
@@ -571,11 +571,11 @@ async def on_startup(application):
             for user in users:
                 chat_id, university = user
                 schedule_reminder_for_user(chat_id, university)
-            logging.info(f"یادآوری‌ها برای {len(users)} کاربر تنظیم شد")
+            logging.info(f"reminders set for : {len(users)} users")
         else:
-            logging.info("هیچ کاربری در دیتابیس یافت نشد")
+            logging.info("no one exisiting in databse")
     except Exception as e:
-        logging.error(f"خطا در تنظیم مجدد یادآوری‌ها: {e}")
+        logging.error(f"fatal error in rescheduling reminders: {e}")
 
     # بررسی و تلاش مجدد برای ارسال یادآوری‌های ناموفق
     await retry_failed_reminders()
@@ -583,25 +583,22 @@ async def on_startup(application):
 
 async def shutdown(application):
     """تنظیمات خاموشی ربات"""
-    logging.info("در حال خاموش کردن ربات...")
+    logging.info("MACHINE IS OFF")
 
     # توقف زمان‌بند
     if scheduler.running:
         scheduler.shutdown()
-        logging.info("زمان‌بند متوقف شد")
+        logging.info("SCHEDULING STOPPED")
 
     # بستن پول اتصال به دیتابیس
     global db_pool
     if db_pool:
-        logging.info("بستن پول اتصال دیتابیس...")
-        # متاسفانه MySQL Connector Python روش مستقیم برای بستن پول ندارد
-        # اما خروج از برنامه باعث آزاد شدن اتصالات می‌شود
+        logging.info("CLOSED POOL OF DB")
         db_pool = None
 
 
 # ─── هندلرهای تلگرام ───────────────────────────────────────────────
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """نسخه بهبودیافته شروع"""
     logging.info(f"دریافت دستور start از {update.effective_chat.id}")
     try:
         await update.message.reply_text(
@@ -614,7 +611,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         )
         return CHOOSING
     except Exception as e:
-        logging.error(f"خطا در تابع start: {e}")
+        logging.error(f"error on start: {e}")
         raise
 
 
@@ -661,12 +658,12 @@ if __name__ == "__main__":
     try:
         # راه‌اندازی اتصال دیتابیس
         if not init_db_pool():
-            logging.critical("اتصال به دیتابیس ناموفق بود.")
+            logging.critical("failed to connect to database")
             sys.exit(1)
 
         # ایجاد جداول مورد نیاز
         if not create_required_tables():
-            logging.critical("ایجاد جداول مورد نیاز ناموفق بود.")
+            logging.critical("failed to create requried tables")
             sys.exit(1)
 
         # اضافه کردن persistence برای ConversationHandler
@@ -708,14 +705,14 @@ if __name__ == "__main__":
         application.post_shutdown = shutdown
 
         # اجرای ربات
-        logging.info("ربات یادآوری غذا در حال راه‌اندازی...")
+        logging.info("MACHINE RUNNING")
         application.run_polling(allowed_updates=Update.ALL_TYPES)
 
     except mysql.connector.Error as db_error:
-        logging.critical(f"خطای دیتابیس هنگام راه‌اندازی: {db_error}")
+        logging.critical(f"DATABASE ERROR ON START: {db_error}")
         asyncio.run(shutdown())
         sys.exit(1)
     except Exception as e:
-        logging.critical(f"خطای راه‌اندازی ربات: {e}")
+        logging.critical(f"FAILED TO START MACHINE: {e}")
         asyncio.run(shutdown())
         sys.exit(1)

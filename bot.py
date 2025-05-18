@@ -311,6 +311,28 @@ def parse_food_schedule(html, university=None):
         }
 
 
+
+def merge_weekly_menus(menu1, menu2):
+    merged_menu = {}
+
+    # ترتیب روزهای هفته به فارسی
+    days_order = ["شنبه", "یکشنبه", "دوشنبه", "سه شنبه", "چهارشنبه", "پنج شنبه", "جمعه"]
+
+    # ترکیب همه روزهای موجود در هر دو منو
+    all_days = set(menu1.keys()) | set(menu2.keys())
+
+    # ایجاد دیکشنری مرتب شده بر اساس ترتیب روزهای هفته
+    for day in days_order:
+        if day in all_days:
+            merged_menu[day] = {
+                'تاریخ': menu1.get(day, {}).get('تاریخ', '') or menu2.get(day, {}).get('تاریخ', ''),
+                'صبحانه': menu1.get(day, {}).get('صبحانه', []),
+                'ناهار': menu1.get(day, {}).get('ناهار', []),
+                'شام': menu2.get(day, {}).get('شام', [])
+            }
+    return merged_menu
+
+
 def format_meals(meals):
     """قالب‌بندی وعده‌های غذایی"""
     if not meals:
@@ -355,8 +377,10 @@ async def handle_food_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 with open("kharazmi_menu.html", "r", encoding="utf-8") as f:
                     html = f.read()
             else:
-                with open("tehran_menu.html", "r", encoding="utf-8") as f:
-                    html = f.read()
+                with open("tehran_menu_lunch.html", "r", encoding="utf-8") as f:
+                    html_lunch = f.read()
+                with open("tehran_menu_dinner.html", "r", encoding="utf-8") as f:
+                    html_dinner = f.read()
         except FileNotFoundError:
             logging.error(f"فایل منوی {university} یافت نشد.")
             await update.message.reply_text(
@@ -366,7 +390,12 @@ async def handle_food_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         # پردازش HTML و استخراج برنامه غذایی
-        schedule = parse_food_schedule(html, university)
+        if(university=="خوارزمی"):
+            schedule = parse_food_schedule(html, university)
+        else:
+            temp1 = parse_food_schedule(html_lunch, university)
+            temp2 = parse_food_schedule(html_dinner, university)
+            schedule =merge_weekly_menus(temp1, temp2)
 
         if is_today:
             today_name = get_today_name()
@@ -380,10 +409,13 @@ async def handle_food_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                                 reply_markup=MAIN_MARKUP)
                 return
 
+
+
             meals = schedule.get(today_name, {})
             response = f"🍽 منوی امروز ({today_name}) دانشگاه {university}:\n\n"
             response += format_meals(meals)
         else:
+
             response = f"🗓 منوی هفته جاری دانشگاه {university}:\n\n"
             for day, meals in schedule.items():
                 response += f"📅 {day}:\n{format_meals(meals)}\n\n"

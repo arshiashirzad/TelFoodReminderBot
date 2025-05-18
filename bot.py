@@ -82,7 +82,7 @@ UNIVERSITY_CONFIG = {
     "تهران": {
         "day_of_week": "sun",
         "hour": 15,
-        "minute": 32,
+        "minute": 35,
         "reminder_message": "⏰ یادآوری: ۲۴ ساعت تا پایان مهلت رزرو غذای دانشگاه تهران باقی مانده!"
     },
 }

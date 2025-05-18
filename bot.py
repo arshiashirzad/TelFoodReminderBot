@@ -43,7 +43,7 @@ load_dotenv()
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 
 MYSQL_CONFIG = {
-    "host": os.getenv("MYSQLHOST", "mysql.railway.internal"),
+    "host": os.getenv("MYSQLHOST"),
     "port": int(os.getenv("MYSQLPORT", "3306")),
     "user": os.getenv("MYSQLUSER"),
     "password": os.getenv("MYSQLPASSWORD"),

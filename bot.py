@@ -244,7 +244,7 @@ def clean_food_name(food):
 def get_today_name():
     """دریافت نام روز هفته امروز به فارسی"""
     today = datetime.now()
-    weekday = today.weekday()
+    weekday = today.weekday()  
 
     days_mapping = {
         0: "دوشنبه",
@@ -255,6 +255,7 @@ def get_today_name():
         5: "شنبه",
         6: "یکشنبه"
     }
+    
 
     return days_mapping[weekday]
 
@@ -317,7 +318,7 @@ def parse_food_schedule(html, university=None):
         print(f"خطا در خواندن برنامه غذایی: {e}")
         return {
             day: {"تاریخ": "", "صبحانه": [], "ناهار": [], "شام": []}
-            for day in ["شنبه", "یکشنبه", "دوشنبه", "سه‌شنبه", "چهارشنبه", "پنجشنبه"]
+                for day in ["شنبه", "یکشنبه", "دوشنبه", "سه‌شنبه", "چهارشنبه", "پنجشنبه"]
         }
 
 

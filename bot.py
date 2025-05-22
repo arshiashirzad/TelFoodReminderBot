@@ -37,6 +37,7 @@ from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
 from apscheduler.events import EVENT_JOB_ERROR, EVENT_JOB_EXECUTED
 
 from dotenv import load_dotenv
+
 load_dotenv()
 
 # ─── CONFIG ──────────────────────────────────────────────────────
@@ -60,7 +61,6 @@ SQLALCHEMY_URL = (
 
 MAX_RETRIES = 3
 DB_RECONNECT_INTERVAL = 60  # seconds
-
 
 # ─── وضعیت گفتگو ─────────────────────────────────────────────────
 CHOOSING = 0
@@ -91,10 +91,12 @@ UNIVERSITY_CONFIG = {
 try:
     # For Python 3.9+
     from zoneinfo import ZoneInfo
+
     tehran_tz = ZoneInfo("Asia/Tehran")
 except ImportError:
     # For older versions
     import pytz
+
     tehran_tz = pytz.timezone("Asia/Tehran")
 
 db_pool = None
@@ -241,21 +243,21 @@ def create_required_tables():
 def clean_food_name(food):
     return re.sub(r"(،|\(|\[)?\s*(رایگان|\d{2,3}(,\d{3})?)\s*(تومان|ریال)?\)?$", "", food).strip()
 
+
 def get_today_name():
     """دریافت نام روز هفته امروز به فارسی"""
     today = datetime.now()
-    weekday = today.weekday()  
+    weekday = today.weekday()
 
     days_mapping = {
         0: "دوشنبه",
-        1: "سه‌شنبه",
+        1: "سه شنبه",
         2: "چهارشنبه",
-        3: "پنجشنبه",
+        3: "پنج شنبه",
         4: "جمعه",
         5: "شنبه",
         6: "یکشنبه"
     }
-    
 
     return days_mapping[weekday]
 
@@ -318,16 +320,15 @@ def parse_food_schedule(html, university=None):
         print(f"خطا در خواندن برنامه غذایی: {e}")
         return {
             day: {"تاریخ": "", "صبحانه": [], "ناهار": [], "شام": []}
-                for day in ["شنبه", "یکشنبه", "دوشنبه", "سه‌شنبه", "چهارشنبه", "پنجشنبه"]
+            for day in ["شنبه", "یکشنبه", "دوشنبه", "سه شنبه", "چهارشنبه", "پنج شنبه"]
         }
-
 
 
 def merge_weekly_menus(menu1, menu2):
     merged_menu = {}
 
     # ترتیب روزهای هفته به فارسی
-    days_order = ["شنبه", "یکشنبه", "دوشنبه", "سه‌شنبه", "چهارشنبه", "پنجشنبه", "جمعه"]
+    days_order = ["شنبه", "یکشنبه", "دوشنبه", "سه شنبه", "چهارشنبه", "پنج شنبه", "جمعه"]
 
     # ترکیب همه روزهای موجود در هر دو منو
     all_days = set(menu1.keys()) | set(menu2.keys())
@@ -401,12 +402,12 @@ async def handle_food_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         # پردازش HTML و استخراج برنامه غذایی
-        if(university=="خوارزمی"):
+        if (university == "خوارزمی"):
             schedule = parse_food_schedule(html, university)
         else:
             temp1 = parse_food_schedule(html_lunch, university)
             temp2 = parse_food_schedule(html_dinner, university)
-            schedule =merge_weekly_menus(temp1, temp2)
+            schedule = merge_weekly_menus(temp1, temp2)
 
         if is_today:
             today_name = get_today_name()
@@ -419,8 +420,6 @@ async def handle_food_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await update.message.reply_text(f"📵 امروز ({today_name}) در دانشگاه تهران غذا سرو نمی‌شود.",
                                                 reply_markup=MAIN_MARKUP)
                 return
-
-
 
             meals = schedule.get(today_name, {})
             response = f"🍽 منوی امروز ({today_name}) دانشگاه {university}:\n\n"
@@ -689,8 +688,6 @@ async def choose_university(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         logging.error(f"خطا در ذخیره انتخاب دانشگاه: {e}")
         await update.message.reply_text("مشکلی پیش آمد. لطفا دوباره تلاش کنید.")
         return CHOOSING
-
-
 
 
 # ─── تنظیمات و راه‌اندازی ربات ───────────────────────────────────
